@@ -74,7 +74,7 @@ def plot_spectrum(ui):
     widget.plot(freqs, mag_mean, pen=pg.mkPen('#0077cc'))
     widget.setLabel('bottom', 'Frequency', units='Hz')
     widget.setLabel('left', 'Magnitude')
-    widget.setTitle('Spectrum')
+    widget.setTitle('Спектр')
    
 
 

@@ -1,18 +1,10 @@
-# audio.py
-
-import os
-import tempfile
-
+import os, tempfile, librosa
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore       import QUrl
-
-import librosa
 import numpy as np
 import scipy.io.wavfile as wavfile
-
-
-
-from eq import apply_equalizer  # ваш модуль эквалайзера
+from eq import apply_equalizer  
+from similarity import compute_similarity_indices as _sim_idx
 
 class AudioController:
     def __init__(self):
@@ -28,6 +20,7 @@ class AudioController:
 
         
 
+
     def open_file(self, path):
         """
         Загружает аудио-файл через librosa и начинает воспроизведение.
@@ -36,7 +29,6 @@ class AudioController:
         - Обновляет current_index на указанный трек
         - Устанавливает QMediaPlayer на воспроизведение
         """
-        import os, librosa
 
         # 1) Проверяем, что файл существует
         if not os.path.exists(path):
@@ -212,3 +204,8 @@ class AudioController:
         start_idx = int(s * self.fs)
         end_idx   = int(e * self.fs)
         return self.data[start_idx:end_idx], self.fs, s, e
+
+    def compute_similarity_indices(self, ref_idx: int, comp_idxs: list[int]) -> dict[int, float]:
+        return _sim_idx(self.playlist, ref_idx, comp_idxs)
+    
+  

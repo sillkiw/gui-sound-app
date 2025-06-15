@@ -1,74 +1,91 @@
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox
-)
-import pyqtgraph as pg
+# dialogs.py
 
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QTabWidget, QWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
+    QPushButton, QSizePolicy, QLabel
+)
+from PyQt5.QtCore import Qt
+import pyqtgraph as pg
+from utils import format_time
 
 class SimilarityTableDialog(QDialog):
-    """
-    Диалог для отображения результатов сходства в виде таблицы.
-    results: dict[int, float] — {индекс_в_playlist: степень_сходства}
-    playlist: list[dict] — список треков с ключом 'title'
-    """
-    def __init__(self, parent, results: dict, playlist: list[dict]):
+    def __init__(self, parent, ref_idx: int, results: dict[int, float], playlist: list[dict]):
         super().__init__(parent)
-        self.setWindowTitle("Похожесть треков")
-        self.resize(400, 300)
+        self.playlist = playlist
+        self.ref_idx = ref_idx
 
-        # Сортируем по убыванию сходства
-        sorted_items = sorted(results.items(), key=lambda x: -x[1])
+        self.setWindowTitle("Сходство треков")
+        self.resize(800, 600)
 
-        layout = QVBoxLayout(self)
+        lo = QVBoxLayout(self)
 
-        table = QTableWidget(len(sorted_items), 2, self)
-        table.setHorizontalHeaderLabels(["Трек", "Сходство"])
-        table.setEditTriggers(table.NoEditTriggers)
+        # Эталон
+        lbl = QLabel(f"Эталон: «{playlist[ref_idx]['title']}»", self)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet("font-weight: bold; font-size: 16px;")
+        lo.addWidget(lbl)
 
-        for row, (idx, score) in enumerate(sorted_items):
-            title = playlist[idx]['title']
-            perc = f"{score * 100:.1f}%"
-            table.setItem(row, 0, QTableWidgetItem(title))
-            table.setItem(row, 1, QTableWidgetItem(perc))
+        # Поиск
+        self.search = QLineEdit(self)
+        self.search.setPlaceholderText("Поиск по названию...")
+        lo.addWidget(self.search)
 
-        table.resizeColumnsToContents()
-        layout.addWidget(table)
+        # Подготовка данных
+        self.sorted_items = sorted(results.items(), key=lambda x: -x[1])
 
-        close_btn = QPushButton("Закрыть")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        # Таблица: Трек, Длительность, Сходство
+        self.table = QTableWidget(len(self.sorted_items), 3, self)
+        self.table.setHorizontalHeaderLabels(["Трек", "Длительность", "Сходство"])
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(False)
+        self.table.verticalHeader().setDefaultSectionSize(30)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
+        hdr = self.table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.Stretch)
 
-class SimilarityGraphDialog(QDialog):
-    """
-    Диалог для отображения результатов сходства в виде гистограммы (BarGraphItem).
-    results: dict[int, float] — {индекс_в_playlist: степень_сходства}
-    playlist: list[dict]
-    """
-    def __init__(self, parent, results: dict, playlist: list[dict]):
-        super().__init__(parent)
-        self.setWindowTitle("График сходства треков")
-        self.resize(600, 400)
+        # Заполнение
+        for row, (idx, score) in enumerate(self.sorted_items):
+            tr = playlist[idx]
+            title = tr["title"]
+            dur_ms = int(tr["duration"] * 1000)
+            perc = f"{score*100:.1f}%"
 
-        layout = QVBoxLayout(self)
+            item_t = QTableWidgetItem(title)
+            item_t.setData(Qt.UserRole, idx)
+            item_d = QTableWidgetItem(format_time(dur_ms))
+            item_s = QTableWidgetItem(perc)
+            item_s.setToolTip(f"{score:.4f}")
 
-        sorted_items = sorted(results.items(), key=lambda x: -x[1])
-        xs = list(range(len(sorted_items)))
-        ys = [score * 100 for _, score in sorted_items]
+            self.table.setItem(row, 0, item_t)
+            self.table.setItem(row, 1, item_d)
+            self.table.setItem(row, 2, item_s)
 
-        plot_widget = pg.PlotWidget()
-        bars = pg.BarGraphItem(x=xs, height=ys, width=0.6, brush=pg.mkBrush('#3daee9'))
-        plot_widget.addItem(bars)
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(2, Qt.DescendingOrder)
+        
+        lo.addWidget(self.table)
 
-        # Подписи оси X
-        xticks = [(i, playlist[idx]['title']) for i, (idx, _) in enumerate(sorted_items)]
-        plot_widget.getAxis('bottom').setTicks([xticks])
-        plot_widget.getAxis('bottom').setStyle(tickTextAngle=45)
+        # Закрыть
+        btn = QPushButton("Закрыть", self)
+        btn.clicked.connect(self.accept)
+        lo.addWidget(btn)
 
-        plot_widget.setLabel('left', 'Сходство, %')
-        plot_widget.setLabel('bottom', 'Трек')
+        # Сигналы
+        self.search.textChanged.connect(self._filter_rows)
+        self.table.itemDoubleClicked.connect(self._on_double_click)
 
-        layout.addWidget(plot_widget)
+    def _filter_rows(self, text: str):
+        text = text.lower().strip()
+        for row, (idx, _) in enumerate(self.sorted_items):
+            title = self.playlist[idx]["title"].lower()
+            self.table.setRowHidden(row, text not in title)
 
-        close_btn = QPushButton("Закрыть")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+    def _on_double_click(self, item: QTableWidgetItem):
+        idx = self.table.item(item.row(), 0).data(Qt.UserRole)
+        self.parent().playlistWidget.setCurrentRow(idx)
+        self.parent().update_ui_for_current_track()
+        self.accept()

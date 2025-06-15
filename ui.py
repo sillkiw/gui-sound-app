@@ -3,7 +3,8 @@ import os, librosa
 from PyQt5.QtWidgets import (QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton,
     QFileDialog, QSlider, QLabel, QStyle,
-    QAction, QListWidget, QListWidgetItem, QSizePolicy    # ← добавили сюда
+    QAction, QListWidget, QListWidgetItem, QSizePolicy, QMenu, QMessageBox,  QAbstractItemView
+    # ← добавили сюда
 )
 from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtCore import Qt, QTimer
@@ -12,7 +13,7 @@ import pyqtgraph as pg
 from audio import AudioController
 from plotting import plot_waveform, plot_spectrum, plot_spectrogram
 from utils import format_time, save_playlist_json, load_playlist_json
-from dialogs     import SimilarityTableDialog, SimilarityGraphDialog
+from dialogs  import SimilarityTableDialog
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -22,7 +23,7 @@ from matplotlib.figure import Figure
 class AudioPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyQt Audio Player with Playlist")
+        self.setWindowTitle("...")
         self.setWindowState(Qt.WindowMaximized)
 
         # Контроллер для логики воспроизведения
@@ -45,11 +46,11 @@ class AudioPlayer(QMainWindow):
         """
 )
         # Меню
-        file_menu = self.menuBar().addMenu("File")
-        self.open_action = QAction("Open...", self)
-        self.add_action = QAction("Add to Playlist...", self)
-        self.save_action = QAction("Save Playlist...", self)
-        self.load_action = QAction("Load Playlist...", self)
+        file_menu = self.menuBar().addMenu("Файл")
+        self.open_action = QAction("Открыть...", self)
+        self.add_action = QAction("Добавить в плейлист...", self)
+        self.save_action = QAction("Сохранить плейлист...", self)
+        self.load_action = QAction("Загрузить плейлист...", self)
         file_menu.addActions([self.open_action, self.add_action, self.save_action, self.load_action])
 
         # Центральный виджет
@@ -62,6 +63,12 @@ class AudioPlayer(QMainWindow):
         # Плейлист
         self.playlistWidget = QListWidget()
         self.playlistWidget.setFixedWidth(300)
+
+        self.playlistWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.playlistWidget.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        self.playlistWidget.customContextMenuRequested.connect(self.show_playlist_menu)
+
         main_layout.addWidget(self.playlistWidget, stretch=1)
 
         # Правая панель
@@ -77,7 +84,7 @@ class AudioPlayer(QMainWindow):
         self.toggle_playlist_btn = QPushButton("≡")
         self.toggle_playlist_btn.setFixedSize(25, 25)
         self.toggle_playlist_btn.setStyleSheet("padding: 0px; font-size: 16px;")
-        self.meta_label = QLabel("No file loaded")
+        self.meta_label = QLabel("Файл не загружен")
         self.meta_label.setAlignment(Qt.AlignCenter)
         self.meta_label.setStyleSheet("background-color: #e0e0e0; padding: 8px; border-radius: 8px; font-weight: bold; font-size: 14px;")
         meta_layout.addWidget(self.toggle_playlist_btn)
@@ -85,14 +92,14 @@ class AudioPlayer(QMainWindow):
         right_layout.addLayout(meta_layout)
 
         # Waveform и Volume графики
-        self.plot_widget = pg.PlotWidget(title="Waveform")
+        self.plot_widget = pg.PlotWidget(title="Форма волны")
         self.plot_widget.setBackground('w')
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setMinimumHeight(150)
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
         right_layout.addWidget(self.plot_widget,stretch=1)
 
-        self.vol_plot_widget = pg.PlotWidget(title="Volume")
+        self.vol_plot_widget = pg.PlotWidget(title="График громкости")
         self.vol_plot_widget.setBackground('w')
         self.vol_plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.vol_plot_widget.setMinimumHeight(150)
@@ -114,7 +121,7 @@ class AudioPlayer(QMainWindow):
         # Вертикальные линии: playhead, segment
         self.start_line = pg.InfiniteLine(pos=0, angle=90, movable=True, pen=pg.mkPen('g', width=4))
         self.end_line = pg.InfiniteLine(pos=0, angle=90, movable=True, pen=pg.mkPen('b', width=4))
-        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=True, pen=pg.mkPen('r', width=4))
+        self.playhead = pg.InfiniteLine(pos=0, angle=90, movable=False, pen=pg.mkPen('r', width=4))
         self.plot_widget.addItem(self.playhead)
         self.plot_widget.addItem(self.start_line)
         self.plot_widget.addItem(self.end_line)
@@ -142,10 +149,10 @@ class AudioPlayer(QMainWindow):
 
         # Навигационные кнопки
         spec_layout = QHBoxLayout()
-        self.waveform_btn = QPushButton("Waveform")
-        self.spectrum_btn = QPushButton("Spectrum")
-        self.spectrogram_btn = QPushButton("Spectrogram")
-        self.eq_toggle_btn = QPushButton("EQ")
+        self.waveform_btn = QPushButton("Форма волны")
+        self.spectrum_btn = QPushButton("Спектр")
+        self.spectrogram_btn = QPushButton("Спектрограмма")
+        self.eq_toggle_btn = QPushButton("Эквалайзер")
         for btn in (self.waveform_btn, self.spectrum_btn, self.spectrogram_btn, self.eq_toggle_btn):
             btn.setFixedHeight(30)
         spec_layout.addStretch()
@@ -186,8 +193,8 @@ class AudioPlayer(QMainWindow):
         eq_layout.addLayout(freq_layout)
         
         buttons_layout = QHBoxLayout()
-        self.eq_apply_btn = QPushButton("Apply EQ")
-        self.eq_reset_btn = QPushButton("Reset EQ")
+        self.eq_apply_btn = QPushButton("Применить")
+        self.eq_reset_btn = QPushButton("Возврат")
         buttons_layout.addWidget(self.eq_apply_btn)
         buttons_layout.addWidget(self.eq_reset_btn)
         eq_layout.addLayout(buttons_layout)
@@ -208,7 +215,7 @@ class AudioPlayer(QMainWindow):
         vs_layout = QHBoxLayout()
         vs_layout.setSpacing(40)
         vol_layout = QHBoxLayout()
-        vol_label = QLabel("Volume")
+        vol_label = QLabel("Громкость")
         self.vol_slider = QSlider(Qt.Horizontal)
         self.vol_slider.setObjectName("smallSlider")
         self.vol_slider.setRange(0, 100)
@@ -219,7 +226,7 @@ class AudioPlayer(QMainWindow):
         vol_layout.addWidget(self.vol_slider)
         vol_layout.addWidget(self.vol_value)
         rate_layout = QHBoxLayout()
-        rate_label = QLabel("Speed")
+        rate_label = QLabel("Скорость")
         self.rate_slider = QSlider(Qt.Horizontal)
         self.rate_slider.setObjectName("smallSlider")
         self.rate_slider.setRange(50, 200)
@@ -479,21 +486,21 @@ class AudioPlayer(QMainWindow):
                                                     os.path.basename(self.controller.playlist[idx]["path"]))
         # Если и этого нет — показываем заглушку
         if not title:
-            title = "No file loaded"
+            title = "Файл не загружен"
 
         # Соберём прочую информацию: битрейт, каналы
-        info = [f"Title: {title}"]
+        info = [f"Название: {title}"]
         bitrate = player.metaData("AudioBitRate")
         channels = player.metaData("ChannelCount")
         if bitrate:
-            info.append(f"Bitrate: {bitrate} bps")
+            info.append(f"Битрейт: {bitrate} бит/с")
         if channels:
-            info.append(f"Channels: {channels}")
+            info.append(f"Каналы: {channels}")
 
         text = " | ".join(info)
         # Обновляем метку и заголовок окна
         self.meta_label.setText(text)
-        self.setWindowTitle(f"PyQt Audio Player - {title}")
+        self.setWindowTitle(f"{title}")
 
     
     def refresh_playlist_widget(self):
@@ -569,6 +576,8 @@ class AudioPlayer(QMainWindow):
         # 3) Обновляем весь UI сразу
         self.update_ui_for_current_track()
 
+    
+
     def reset_eq(self):
         # 1) Сбрасываем слайдеры эквалайзера
         for slider in self.eq_sliders:
@@ -582,3 +591,36 @@ class AudioPlayer(QMainWindow):
             self.controller._set_media(track['path'])
             self.controller.player.play()
         self.update_ui_for_current_track()
+
+    
+    def show_playlist_menu(self, pos):
+        """
+        Показывает контекстное меню при правом клике на playlistWidget.
+        pos — QPoint внутри widget, по которому кликнули.
+        """
+        menu = QMenu(self)
+        find_sim = menu.addAction("Найти похожие треки")
+        # можно добавить ещё действий: play, remove и т.п.
+
+        action = menu.exec_(self.playlistWidget.mapToGlobal(pos))
+        if action == find_sim:
+            self.on_find_similar()
+
+    def on_find_similar(self):
+        rows = [i.row() for i in self.playlistWidget.selectedIndexes()]
+        if len(rows) < 2:
+            QMessageBox.information(     self,
+            "Недостаточно треков",
+            "Пожалуйста, выберите минимум два трека для сравнения.")
+            return
+        ref, comps = rows[0], rows[1:]
+        results = self.controller.compute_similarity_indices(ref, comps)
+
+        dlg = SimilarityTableDialog(
+            self,
+            ref,
+            results,
+            self.controller.playlist
+        )
+        dlg.exec_()
+
